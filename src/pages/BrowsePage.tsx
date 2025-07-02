@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Search, Filter, Grid, List, MapPin, SlidersHorizontal } from 'lucide-react';
+import { Search, Filter, Grid, List, MapPin, SlidersHorizontal, RefreshCw } from 'lucide-react';
 import { SearchBar } from '../components/common/SearchBar';
 import { PropertyCard } from '../components/listings/PropertyCard';
 import { Listing, SearchFilters } from '../types';
@@ -10,6 +10,7 @@ export const BrowsePage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const [listings, setListings] = useState<Listing[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState<SearchFilters>({
@@ -25,7 +26,22 @@ export const BrowsePage: React.FC = () => {
 
   const fetchListings = async () => {
     setLoading(true);
+    setError(null);
+    
     try {
+      // Test connection first
+      const { data: testConnection, error: connectionError } = await supabase
+        .from('areas')
+        .select('count')
+        .limit(1);
+
+      if (connectionError) {
+        console.error('Supabase connection error:', connectionError);
+        setError('ডাটাবেস সংযোগে সমস্যা হয়েছে');
+        setLoading(false);
+        return;
+      }
+
       let query = supabase
         .from('listings')
         .select(`
@@ -71,10 +87,17 @@ export const BrowsePage: React.FC = () => {
 
       const { data, error } = await query;
 
-      if (error) throw error;
-      setListings(data || []);
+      if (error) {
+        console.error('Error fetching listings:', error);
+        setError('প্রপার্টি লোড করতে সমস্যা হয়েছে');
+        setListings([]);
+      } else {
+        console.log('Fetched listings:', data);
+        setListings(data || []);
+      }
     } catch (error) {
-      console.error('Error fetching listings:', error);
+      console.error('Unexpected error:', error);
+      setError('অপ্রত্যাশিত সমস্যা হয়েছে');
     } finally {
       setLoading(false);
     }
@@ -90,6 +113,10 @@ export const BrowsePage: React.FC = () => {
 
   const handleFilterChange = (newFilters: Partial<SearchFilters>) => {
     setFilters(prev => ({ ...prev, ...newFilters }));
+  };
+
+  const handleRetry = () => {
+    fetchListings();
   };
 
   return (
@@ -205,6 +232,13 @@ export const BrowsePage: React.FC = () => {
 
               <div className="flex items-center space-x-2">
                 <button
+                  onClick={handleRetry}
+                  className="p-2 text-gray-500 hover:text-gray-700 rounded-lg hover:bg-gray-100"
+                  title="রিফ্রেশ করুন"
+                >
+                  <RefreshCw className="h-5 w-5" />
+                </button>
+                <button
                   onClick={() => setViewMode('grid')}
                   className={`p-2 rounded-lg ${viewMode === 'grid' ? 'bg-primary-100 text-primary-700' : 'text-gray-500 hover:text-gray-700'}`}
                 >
@@ -218,6 +252,25 @@ export const BrowsePage: React.FC = () => {
                 </button>
               </div>
             </div>
+
+            {/* Error State */}
+            {error && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-6 mb-6">
+                <h3 className="text-lg font-medium text-red-800 mb-2">
+                  {error}
+                </h3>
+                <p className="text-red-700 text-sm mb-4">
+                  অনুগ্রহ করে আপনার ইন্টারনেট সংযোগ চেক করুন এবং আবার চেষ্টা করুন।
+                </p>
+                <button
+                  onClick={handleRetry}
+                  className="btn-primary text-sm flex items-center space-x-2"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  <span>আবার চেষ্টা করুন</span>
+                </button>
+              </div>
+            )}
 
             {/* Results */}
             {loading ? (
@@ -233,13 +286,13 @@ export const BrowsePage: React.FC = () => {
                   </div>
                 ))}
               </div>
-            ) : listings.length > 0 ? (
+            ) : !error && listings.length > 0 ? (
               <div className={`grid ${viewMode === 'grid' ? 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3' : 'grid-cols-1'} gap-6`}>
                 {listings.map((listing) => (
                   <PropertyCard key={listing.id} listing={listing} />
                 ))}
               </div>
-            ) : (
+            ) : !error && (
               <div className="text-center py-12">
                 <MapPin className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">
@@ -248,12 +301,17 @@ export const BrowsePage: React.FC = () => {
                 <p className="text-gray-600 mb-4">
                   আপনার খোঁজের মাপদণ্ড অনুযায়ী কোনো প্রপার্টি খুঁজে পাওয়া যায়নি।
                 </p>
-                <button
-                  onClick={() => setFilters({})}
-                  className="btn-primary"
-                >
-                  সব ফিল্টার রিসেট করুন
-                </button>
+                <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                  <button
+                    onClick={() => setFilters({})}
+                    className="btn-secondary"
+                  >
+                    সব ফিল্টার রিসেট করুন
+                  </button>
+                  <a href="/post-listing" className="btn-primary">
+                    নতুন বিজ্ঞাপন দিন
+                  </a>
+                </div>
               </div>
             )}
           </div>
